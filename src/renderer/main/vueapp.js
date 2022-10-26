@@ -133,6 +133,7 @@ const app = new Vue({
     animateBackground: false,
     currentArtUrl: "",
     currentArtUrlRaw: "",
+    mvViewMode: "full",
     lyricon: false,
     currentTrackID: "",
     lyrics: [],
@@ -289,6 +290,19 @@ const app = new Vue({
     );
   },
   methods: {
+    _fetch(url, opts = {}) {
+      if (app.cfg.advanced.experiments.includes("cider_mirror") === true) {
+        if (url.includes("api.github.com/")) {
+          return fetch(url.replace("api.github.com/", "mirror.api.cider.sh/v2/api/"), opts);
+        } else if (url.includes("raw.githubusercontent.com/")) {
+          return fetch(url.replace("raw.githubusercontent.com/", "mirror.api.cider.sh/v2/raw/"), opts);
+        } else {
+          return fetch(url, opts);
+        }
+      } else {
+        return fetch(url, opts);
+      }
+    },
     setWindowHash(route = "") {
       this.setPagePos();
       window.location.hash = `#${route}`;
@@ -1232,6 +1246,7 @@ const app = new Vue({
 
       this.mk.addEventListener(MusicKit.Events.playbackVolumeDidChange, (_a) => {
         this.cfg.audio.volume = this.mk.volume;
+        ipcRenderer.send("mpris:volumeChange", this.mk.volume);
       });
 
       this.refreshPlaylists(this.isDev);
@@ -1289,21 +1304,20 @@ const app = new Vue({
       const themes = ipcRenderer.sendSync("get-themes");
       await asyncForEach(themes, async (theme) => {
         if (theme.commit != "") {
-          await fetch(`https://api.github.com/repos/${theme.github_repo}/commits`)
-            .then((res) => res.json())
-            .then((res) => {
-              if (res[0].sha != theme.commit) {
-                const notify = notyf.open({
-                  className: "notyf-info",
-                  type: "info",
-                  message: app.stringTemplateParser(app.getLz("settings.notyf.visual.theme.updateAvailable"), { theme: theme.name }),
-                });
-                notify.on("click", () => {
-                  app.openSettingsPage("github-themes");
-                  notyf.dismiss(notify);
-                });
-              }
-            });
+          if (theme.commit != "") {
+            app._fetch(`https://api.github.com/repos/${theme.github_repo}/commits`).then((res) => res.json());
+            if (res[0].sha != theme.commit) {
+              const notify = notyf.open({
+                className: "notyf-info",
+                type: "info",
+                message: app.stringTemplateParser(app.getLz("settings.notyf.visual.theme.updateAvailable"), { theme: theme.name }),
+              });
+              notify.on("click", () => {
+                app.openSettingsPage("github-themes");
+                notyf.dismiss(notify);
+              });
+            }
+          }
         }
       });
     },
@@ -2143,14 +2157,16 @@ const app = new Vue({
       }, 100);
     },
     setPagePos() {
-      console.debug({
-        href: window.location.hash,
-        position: $("#app-content").scrollTop(),
-      });
-      this.$store.commit("setPagePos", {
-        href: window.location.hash,
-        position: $("#app-content").scrollTop(),
-      });
+      try {
+        console.debug({
+          href: window.location.hash,
+          position: $("#app-content").scrollTop(),
+        });
+        this.$store.commit("setPagePos", {
+          href: window.location.hash,
+          position: $("#app-content").scrollTop(),
+        });
+      } catch (e) {}
     },
     routeView(item) {
       this.setPagePos();
@@ -2528,6 +2544,11 @@ const app = new Vue({
           } else if (prefs.sort === "dateAdded") {
             aa = a.relationships?.albums?.data[0]?.attributes?.dateAdded;
             bb = b.relationships?.albums?.data[0]?.attributes?.dateAdded;
+            // if dateAdded is equal, an entire album was added at once, so sorting by track number (in reverse order because lower track number should be above in descending mode)
+            if (aa === bb) {
+              aa = b.attributes.trackNumber;
+              bb = a.attributes.trackNumber;
+            }
           } else if (prefs.sort === "artistName") {
             if (a.relationships?.artists?.data[0]?.id === b.relationships?.artists?.data[0]?.id) {
               aa = a.attributes.albumName;
@@ -3263,21 +3284,35 @@ const app = new Vue({
       if (musicType === "musicVideo") {
         this.loadYTLyrics();
       } else {
-        // if (app.cfg.lyrics.enable_mxm) {
-        this.loadMXM();
-        // } else {
-        //     this.loadAMLyrics();
-        // }
+        // only load MXM lyrics if AM lyrics failed to load
+        if (app.cfg.lyrics.enable_mxm) {
+          this.loadMXM();
+        } else {
+          this.loadAMLyrics();
+        }
       }
     },
-    loadAMLyrics() {
+    async loadAMLyrics() {
       const songID = this.mk.nowPlayingItem != null ? this.mk.nowPlayingItem["_songId"] ?? this.mk.nowPlayingItem["songId"] ?? -1 : -1;
       // this.getMXM( trackName, artistName, 'en', duration);
       if (songID != -1) {
-        this.mk.api.v3.music(`v1/catalog/${this.mk.storefrontId}/songs/${songID}/lyrics`).then((response) => {
+        try {
+          let response = await this.mk.api.v3.music(`v1/catalog/${this.mk.storefrontId}/songs/${songID}/lyrics`);
           this.lyricsMediaItem = response.data?.data[0]?.attributes["ttml"];
           this.parseTTML();
-        });
+        } catch (_) {
+          if (app.cfg.lyrics.enable_mxm) {
+            this.loadQQLyrics();
+          } else {
+            this.loadMXM();
+          }
+        }
+      } else {
+        if (app.cfg.lyrics.enable_mxm) {
+          this.loadQQLyrics(); // since mxm is already prioritized, we can just load qq lyrics if am fails
+        } else {
+          this.loadMXM();
+        }
       }
     },
     addToLibrary(id) {
@@ -3410,8 +3445,7 @@ const app = new Vue({
                 }
 
                 if (lrcfile === "") {
-                  app.loadQQLyrics();
-                  // app.loadAMLyrics()
+                  app.loadAMLyrics();
                 } else {
                   if (richsync == [] || richsync.length == 0) {
                     console.log("musixmatch worki");
@@ -3463,20 +3497,17 @@ const app = new Vue({
                 }
               } catch (e) {
                 console.log(e);
-                app.loadQQLyrics();
-                //  app.loadAMLyrics()
+                app.loadAMLyrics();
               }
             }
           } catch (e) {
             console.error(e);
-            app.loadQQLyrics();
-            //app.loadAMLyrics()
+            app.loadAMLyrics();
           }
         };
         req.onerror = function () {
-          app.loadQQLyrics();
           console.log("error");
-          // app.loadAMLyrics();
+          app.loadAMLyrics();
         };
         req.open("POST", url, true);
         req.send();
@@ -4875,11 +4906,15 @@ const app = new Vue({
       }
       app.modals.settings = true;
     },
-    fullscreen(flag) {
+    fullscreen(flag, mv = false) {
       this.fullscreenState = flag;
       if (flag) {
         ipcRenderer.send("setFullScreen", true);
-        app.appMode = "fullscreen";
+        if (!mv) {
+          app.appMode = "fullscreen";
+        } else {
+          app.mvViewMode = "full";
+        }
 
         document.addEventListener("keydown", (event) => {
           if (event.key === "Escape" && app.appMode === "fullscreen") {
@@ -4892,12 +4927,13 @@ const app = new Vue({
       }
     },
     pip() {
-      document.querySelector("video#apple-music-video-player").requestPictureInPicture();
-      // .then(pictureInPictureWindow => {
-      //     pictureInPictureWindow.addEventListener("resize", () => {
-      //         console.log("[PIP] Resized")
-      //     }, false);
-      //   })
+      // document.querySelector("video#apple-music-video-player").requestPictureInPicture();
+      // // .then(pictureInPictureWindow => {
+      // //     pictureInPictureWindow.addEventListener("resize", () => {
+      // //         console.log("[PIP] Resized")
+      // //     }, false);
+      // //   })
+      this.mvViewMode = this.mvViewMode == "mini" ? "full" : "mini";
     },
     miniPlayer(flag) {
       if (flag) {

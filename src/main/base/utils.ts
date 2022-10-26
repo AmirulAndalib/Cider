@@ -3,6 +3,7 @@ import * as path from "path";
 import { Store } from "./store";
 import { BrowserWindow as bw } from "./browserwindow";
 import { app, BrowserWindow, ipcMain } from "electron";
+import fetch from "electron-fetch";
 import ElectronStore from "electron-store";
 
 export class utils {
@@ -77,6 +78,30 @@ export class utils {
     return bw.express;
   }
 
+  /**
+   * MitM the electron fetch for a function that proxies github.
+   * Written in TS so Maikiwi doesn't fuck up
+   * @param url {string} URL param
+   * @param opts {object} Other options
+   */
+  static async fetch(url: string, opts = {}) {
+    Object.assign(opts, {
+      headers: {
+        "User-Agent": utils.getWindow().webContents.getUserAgent(),
+      },
+    });
+    if (this.getStoreValue("advanced.experiments").includes("cider_mirror") === true) {
+      if (url.includes("api.github.com/")) {
+        return await fetch(url.replace("api.github.com/", "mirror.api.cider.sh/v2/api/"), opts);
+      } else if (url.includes("raw.githubusercontent.com/")) {
+        return await fetch(url.replace("raw.githubusercontent.com/", "mirror.api.cider.sh/v2/raw/"), opts);
+      } else {
+        return await fetch(url, opts);
+      }
+    } else {
+      return await fetch(url, opts);
+    }
+  }
   /**
    * Fetches the i18n locale for the given language.
    * @param language {string} The language to fetch the locale for.

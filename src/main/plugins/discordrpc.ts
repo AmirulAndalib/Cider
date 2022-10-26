@@ -9,7 +9,7 @@ export default class DiscordRPC {
   public name: string = "Discord Rich Presence";
   public description: string = "Discord RPC plugin for Cider";
   public version: string = "1.1.0";
-  public author: string = "vapormusic/Core (Cider Collective)";
+  public author: string = "vapormusic/Core/cryptofyre (Cider Collective)";
 
   /**
    * Private variables for interaction in plugins
@@ -59,43 +59,18 @@ export default class DiscordRPC {
     const self = this;
     ipcMain.on("discordrpc:updateImage", async (_event, imageurl) => {
       if (!this._utils.getStoreValue("general.privateEnabled")) {
-        let b64data = "";
-        let postbody = "";
-        if (imageurl.startsWith("/ciderlocalart")) {
-          let port = await this._utils.getWindow().webContents.executeJavaScript(`app.clientPort`);
-          console.log("http://localhost:" + port + imageurl);
-          const response = await fetch("http://localhost:" + port + imageurl);
-          b64data = (await response.buffer()).toString("base64");
-          postbody = JSON.stringify({ data: b64data });
-          fetch("https://api.cider.sh/v1/images", {
-            method: "POST",
-            body: postbody,
-            headers: {
-              "Content-Type": "application/json",
-              "User-Agent": this._utils.getWindow().webContents.getUserAgent(),
-            },
-          })
-            .then((res) => res.json())
-            .then(function (json) {
-              self._attributes["artwork"]["url"] = json.url;
-              self.setActivity(self._attributes);
-            });
-        } else {
-          postbody = JSON.stringify({ url: imageurl });
-          fetch("https://api.cider.sh/v1/images", {
-            method: "POST",
-            body: postbody,
-            headers: {
-              "Content-Type": "application/json",
-              "User-Agent": this._utils.getWindow().webContents.getUserAgent(),
-            },
-          })
-            .then((res) => res.json())
-            .then(function (json) {
-              self._attributes["artwork"]["url"] = json.url;
-              self.setActivity(self._attributes);
-            });
-        }
+        fetch("https://api.cider.sh/v1/images", {
+          method: "POST",
+          headers: {
+            "User-Agent": this._utils.getWindow().webContents.getUserAgent(),
+            url: imageurl,
+          },
+        })
+          .then((res) => res.json())
+          .then(function (json) {
+            self._attributes["artwork"]["url"] = json.imageUrl;
+            self.setActivity(self._attributes);
+          });
       }
     });
     ipcMain.on("discordrpc:reload", (_event, configUpdate = null) => {
