@@ -4,7 +4,7 @@ import * as path from "path";
 import * as log from "electron-log";
 import * as os from "os";
 import { utils } from "./utils";
-
+ 
 /**
  * @file Creates App instance
  * @author CiderCollective
