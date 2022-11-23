@@ -90,7 +90,19 @@ export class utils {
         "User-Agent": utils.getWindow().webContents.getUserAgent(),
       },
     });
+
     if (this.getStoreValue("advanced.experiments").includes("cider_mirror") === true) {
+      // Hard code audio lab logic
+      if (url === "https://raw.githubusercontent.com/ciderapp/audiolab-cloud/main/audiolab_index.json") {
+        fetch(path.join(this.paths.rendererPath, "/audio/cloud/audiolab_index.json")).then(async (res) => {
+          let _res = await fetch("https://mirror.api.cider.sh/v2/raw/ciderapp/audiolab-cloud/main/audiolab_index.json")
+          fs.writeFileSync(path.join(this.paths.rendererPath, "/audio/cloud/audiolab_index.json"), JSON.stringify(_res.json()))
+          return _res.json()
+        });
+      }
+
+      // TODO: CHECK CFG FOR LOCAL CACHING, IF YES THEN DOWNLOAD IMPULSE THEN WRITE TO EXTERNAL/IMPULSES
+
       if (url.includes("api.github.com/")) {
         return await fetch(url.replace("api.github.com/", "mirror.api.cider.sh/v2/api/"), opts);
       } else if (url.includes("raw.githubusercontent.com/")) {
@@ -99,6 +111,15 @@ export class utils {
         return await fetch(url, opts);
       }
     } else {
+      // Hard code audio lab logic
+      if (url === "https://raw.githubusercontent.com/ciderapp/audiolab-cloud/main/audiolab_index.json") {
+        fetch(path.join(this.paths.rendererPath, "/audio/cloud/audiolab_index.json")).then(async (res) => {
+          let _res = await fetch(url)
+          fs.writeFileSync(path.join(this.paths.rendererPath, "/audio/cloud/audiolab_index.json"), JSON.stringify(_res.json()))
+          return _res.json()
+        });
+      }
+
       return await fetch(url, opts);
     }
   }
