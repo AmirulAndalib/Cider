@@ -1082,21 +1082,6 @@ export class BrowserWindow {
       event.returnValue = read;
     });
 
-    ipcMain.on("read-audio-binary", (event, arg) => {
-      if (existsSync(join(app.getPath("userData"), "audio", arg))) {
-        event.returnValue = readFileSync(arg);
-      } else {
-        event.returnValue = undefined;
-      }
-    });
-
-    ipcMain.on("write-audio-binary", (event, arg) => {
-      if (!existsSync(join(app.getPath("userData"), "audio"))) {
-        mkdirSync(join(app.getPath("userData"), "audio"));
-      }
-      writeFileSync(join(app.getPath("userData"), "audio", arg.name), arg.data);
-    });
-
     ipcMain.handle("getYTLyrics", async (_event, track, artist) => {
       const u = track + " " + artist + " official video";
       return await search(u);
