@@ -2,6 +2,7 @@ import * as electron from "electron";
 import * as os from "os";
 import { resolve } from "path";
 import * as CiderReceiver from "../base/castreceiver";
+import { clientPort } from "../base/browserwindow";
 const MediaRendererClient = require("upnp-mediarenderer-client");
 
 export default class ChromecastPlugin {
@@ -28,7 +29,7 @@ export default class ChromecastPlugin {
   // private GCstream = new Stream.PassThrough(),
   private connectedHosts: any = {};
   private connectedPlayer: any;
-  private ciderPort: any = 9000;
+  private ciderPort: any = clientPort;
   private scanCount: any = 0;
   // private server = false;
   // private  bufcount = 0;

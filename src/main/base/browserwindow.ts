@@ -1,8 +1,8 @@
 import { join } from "path";
 import { app, BrowserWindow as bw, ipcMain, ShareMenu, shell, screen, dialog, nativeTheme } from "electron";
-import * as windowStateKeeper from "electron-window-state";
+import windowStateKeeper from "electron-window-state";
 import * as express from "express";
-import * as getPort from "get-port";
+import getPort, {portNumbers} from 'get-port';
 import { search } from "youtube-search-without-api-key";
 import { existsSync, rmSync, mkdirSync, readdirSync, readFileSync, writeFileSync, statSync, unlinkSync, rmdirSync, lstatSync } from "fs";
 import { Stream } from "stream";
@@ -32,7 +32,7 @@ export class BrowserWindow {
   private audioStream: any = new Stream.PassThrough();
   private headerSent: any = false;
   private chromecastIP: any = [];
-  private clientPort: number = 0;
+  public static clientPort: number = 0;
   private remotePort: number = 6942;
   private EnvironmentVariables: object = {
     env: {
@@ -396,8 +396,12 @@ export class BrowserWindow {
    * @yields {object} Electron browser window
    */
   async createWindow(): Promise<Electron.BrowserWindow> {
-    const envPort = process.env?.CIDER_PORT || "9000";
-    this.clientPort = await getPort({ port: parseInt(envPort, 10) || 9000 });
+    const envPort = parseInt(process.env?.CIDER_PORT || "9000", 10);
+    if (envPort === 9000) {
+      BrowserWindow.clientPort = await getPort({ port: portNumbers(9000, 9999) });
+    } else {
+      BrowserWindow.clientPort = await getPort({ port: envPort });
+    }
     BrowserWindow.verifyFiles();
     this.StartWatcher(utils.getPath("themes"));
 
@@ -500,7 +504,7 @@ export class BrowserWindow {
     app.set("views", join(utils.getPath("srcPath"), "./renderer/views"));
     app.set("view engine", "ejs");
     let firstRequest = true;
-    app.use((req, res, next) => {
+    app.use((req: { headers: { [x: string]: string | string[]; host: string | string[]; }; url: string | string[]; }, res: { redirect: (arg0: string) => void; }, next: () => void) => {
       if (!req || !req.headers || !req.headers.host || !req.headers["user-agent"]) {
         console.error("Req not defined");
         return;
@@ -512,11 +516,11 @@ export class BrowserWindow {
       }
     });
 
-    app.get("/", (_req, res) => {
+    app.get("/", (_req: any, res: { render: (arg0: string, arg1: object) => void; }) => {
       res.render("main", this.EnvironmentVariables);
     });
 
-    app.get("/audio/cideraudio.js", (_req, res) => {
+    app.get("/audio/cideraudio.js", (_req: any, res: { sendFile: (arg0: string) => void; }) => {
       if (existsSync(join(utils.getPath("externals"), "/audio.js"))) {
         if (utils.getStoreValue("audio.maikiwiAudio.cloud") == true) {
           res.sendFile(join(utils.getPath("externals"), "/cloud/audio.js"));
@@ -528,7 +532,7 @@ export class BrowserWindow {
       }
     });
 
-    app.get("/cideraudio/impulses/:file", (req, res) => {
+    app.get("/cideraudio/impulses/:file", (req: { params: { file: string; }; }, res: { sendFile: (arg0: string) => void; }) => {
       const impulseExternals = join(utils.getPath("externals"), "/impulses/");
       const impulseFile = join(impulseExternals, req.params.file);
       if (existsSync(impulseFile)) {
@@ -538,7 +542,7 @@ export class BrowserWindow {
       }
     });
 
-    app.get("/api/playback/:action", (req, res) => {
+    app.get("/api/playback/:action", (req: { params: { action: any; }; }, res: { send: (arg0: string) => void; }) => {
       const action = req.params.action;
       switch (action) {
         case "playpause":
@@ -571,7 +575,7 @@ export class BrowserWindow {
       }
     });
 
-    app.get("/themes/:theme", (req, res) => {
+    app.get("/themes/:theme", (req: { params: { theme: any; }; }, res: { sendFile: (arg0: string) => void; send: (arg0: string) => void; }) => {
       const theme = req.params.theme;
       const themePath = join(utils.getPath("srcPath"), "./renderer/themes/", theme);
       const userThemePath = join(utils.getPath("themes"), theme);
@@ -584,7 +588,7 @@ export class BrowserWindow {
       }
     });
 
-    app.get("/themes/:theme/*", (req: { params: { theme: string; 0: string } }, res) => {
+    app.get("/themes/:theme/*", (req: { params: { theme: string; 0: string } }, res: { sendFile: (arg0: string) => void; send: (arg0: string) => void; }) => {
       const theme = req.params.theme;
       const file = req.params[0];
       const themePath = join(utils.getPath("srcPath"), "./renderer/themes/", theme);
@@ -598,7 +602,7 @@ export class BrowserWindow {
       }
     });
 
-    app.get("/plugins/:plugin/*", (req: { params: { plugin: string; 0: string } }, res) => {
+    app.get("/plugins/:plugin/*", (req: { params: { plugin: string; 0: string } }, res: { sendFile: (arg0: string) => void; send: (arg0: string) => void; }) => {
       let plugin = req.params.plugin;
       if (Plugins.getPluginFromMap(plugin)) {
         plugin = Plugins.getPluginFromMap(plugin);
@@ -613,7 +617,7 @@ export class BrowserWindow {
       }
     });
 
-    app.get("/audio.wav", (req, res) => {
+    app.get("/audio.wav", (req: { headers: { [x: string]: any; }; connection: { remoteAddress: any; }; socket: { setTimeout: (arg0: number) => void; }; on: (arg0: string, arg1: () => void) => void; }, res: { write: (arg0: any) => void; }) => {
       try {
         const ip = req.headers["x-forwarded-for"] || req.connection.remoteAddress;
         if (!this.chromecastIP.includes(ip)) {
@@ -643,7 +647,7 @@ export class BrowserWindow {
       }
     });
     //region Connect Integration
-    app.get("/connect/set-cc-user/:data", (req, res) => {
+    app.get("/connect/set-cc-user/:data", (req: { params: { data: string; }; }, res: { redirect: (arg0: string) => void; }) => {
       //utils.getStoreValue('connectUser', JSON.parse()) // [Connect] Save user in store
       utils.getWindow().webContents.send("setStoreValue", "connectUser", JSON.parse(req.params.data));
       res.redirect(`https://connect.cidercollective.dev/linked.html`);
@@ -652,12 +656,12 @@ export class BrowserWindow {
     LocalFiles.setupHandlers();
 
     // [Connect] Set auth URL in store for `shell.openExternal`
-    utils.setStoreValue("cc_authURL", `https://connect.cidercollective.dev/callback/discord?app=cider&appPort=${this.clientPort}`);
+    utils.setStoreValue("cc_authURL", `https://connect.cidercollective.dev/callback/discord?app=cider&appPort=${BrowserWindow.clientPort}`);
     console.log(`[Connect] Auth URL: ${utils.getStoreValue("cc_authURL")}`);
     //endregion
 
-    app.listen(this.clientPort, () => {
-      console.log(`Cider client port: ${this.clientPort}`);
+    app.listen(BrowserWindow.clientPort, () => {
+      console.log(`Cider client port: ${BrowserWindow.clientPort}`);
     });
 
     /*
@@ -676,7 +680,7 @@ export class BrowserWindow {
         console.log(`Cider remote port: ${this.remotePort}`);
         firstRequest = false;
       });
-      remote.get("/", (_req, res) => {
+      remote.get("/", (_req: any, res: { render: (arg0: string, arg1: object) => void; }) => {
         res.render("index", this.EnvironmentVariables);
       });
     });
@@ -694,13 +698,13 @@ export class BrowserWindow {
       (details: { url: string | string[] }, callback: (arg0: { redirectURL?: string; cancel?: boolean }) => void) => {
         if (details.url.includes("hls.js")) {
           callback({
-            redirectURL: `http://localhost:${this.clientPort}/apple-hls.js`,
+            redirectURL: `http://localhost:${BrowserWindow.clientPort}/apple-hls.js`,
           });
         } else if (details.url.includes("ciderlocal") && !details.url.includes("https://apic-desktop.musixmatch.com")) {
           let text = details.url.toString().includes("ids=") ? decodeURIComponent(details.url.toString()).split("?ids=")[1] : decodeURIComponent(details.url.toString().substring(details.url.toString().lastIndexOf("/") + 1));
           //console.log('localurl',text)
           callback({
-            redirectURL: `http://localhost:${this.clientPort}/ciderlocal/${Buffer.from(text).toString("base64url")}`,
+            redirectURL: `http://localhost:${BrowserWindow.clientPort}/ciderlocal/${Buffer.from(text).toString("base64url")}`,
           });
         } else {
           callback({
@@ -742,7 +746,7 @@ export class BrowserWindow {
       callback({ requestHeaders: details.requestHeaders });
     });
 
-    let location = `http://localhost:${this.clientPort}/`;
+    let location = `http://localhost:${BrowserWindow.clientPort}/`;
 
     if (app.isPackaged) {
       BrowserWindow.win.loadURL(location);
@@ -1068,7 +1072,7 @@ export class BrowserWindow {
     });
 
     ipcMain.on("get-port", (event) => {
-      event.returnValue = this.clientPort;
+      event.returnValue = BrowserWindow.clientPort;
     });
 
     ipcMain.on("is-dev", (event) => {
@@ -1547,3 +1551,5 @@ export class BrowserWindow {
     console.log("remote broadcasted");
   }
 }
+
+export const clientPort = BrowserWindow.clientPort
